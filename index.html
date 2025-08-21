@@ -1,81 +1,331 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Study Helper</title>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>Study Helper – Upload → Auto-Quiz</title>
+  <meta name="theme-color" content="#111111" />
+
+  <!-- Minimal mobile-friendly styles -->
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f9; }
-    #quiz, #result { margin-top: 20px; }
-    .question { margin-bottom: 15px; padding: 10px; background: #fff; border-radius: 10px; }
-    button { padding: 10px 20px; margin-top: 10px; border: none; background: #4CAF50; color: white; border-radius: 8px; }
-    button:hover { background: #45a049; }
+    :root { --bg:#0b0b0b; --card:#121212; --muted:#9ca3af; --text:#e5e5e5; --border:#222; --ok:#10b981; --bad:#ef4444; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif; }
+    .wrap { min-height: 100dvh; display:flex; align-items:center; justify-content:center; padding: 20px; }
+    .card { width:100%; max-width:850px; background:var(--card); border:1px solid var(--border); border-radius: 18px; padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .muted { color:var(--muted); font-size: 13px; margin-bottom: 10px; }
+    .row { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
+    .btn { appearance:none; border:1px solid #2a2a2a; background:#141414; color:var(--text); border-radius: 12px; padding: 10px 14px; font-weight:600; }
+    .btn:active { transform: translateY(1px); }
+    .input { height: 40px; border-radius: 10px; background:#111; border:1px solid #2a2a2a; color:var(--text); padding:0 10px; }
+    .file { display:none; }
+    .drop { border:2px dashed #2a2a2a; border-radius:14px; padding:16px; text-align:center; margin-top: 8px; }
+    .status { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .ok { color: var(--ok); }
+    .err { color: var(--bad); }
+    .grid { display:grid; gap:12px; }
+    .q { padding:12px; border:1px solid var(--border); border-radius: 12px; background:#0f0f0f; }
+    .prompt { margin:0 0 10px; line-height: 1.4; }
+    .opt { text-align:left; width:100%; padding:10px; border-radius:10px; border:1px solid #2a2a2a; background:#111; color:var(--text); }
+    .opt.selected { border-color:#6b7280; background:#171717; }
+    .opt.correct { border-color:#10b981; }
+    .opt.incorrect { border-color:#ef4444; }
+    .footer { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap: wrap; }
+    .src { max-height: 200px; overflow:auto; background:#0f0f0f; border:1px solid var(--border); border-radius:10px; padding:10px; white-space: pre-wrap; font-size: 13px; color:#d1d5db; }
+    .badge { display:inline-block; padding:3px 8px; border-radius: 999px; background:#111; border:1px solid #333; color:#e5e7eb; font-size: 12px; }
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap: wrap; }
+    .hint { font-size: 12px; color:#d1d5db; margin-top:6px; }
   </style>
+
+  <!-- DOCX parser -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js" integrity="sha512-C3Wc0a6cH3yFsi3I+5tP5W5s8QXw8J7yeQH+V+oK7dTd2sJvZ2XUBM0kRsdqYdN6KNXye8f2Vq9m2d+2zELXoA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <!-- PDF parser -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.min.js"></script>
+  <!-- PPTX via JSZip -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 <body>
-  <h1>📚 Study Helper</h1>
-  <p>Upload your reviewer (TXT only for now):</p>
-  <input type="file" id="fileInput" accept=".txt">
-  <div id="quiz"></div>
-  <div id="result"></div>
+  <div class="wrap">
+    <div class="card">
+      <h1>Study Helper (Client-only)</h1>
+      <div class="muted">Upload your reviewer (<b>DOCX / PDF / PPTX</b>) → auto-generate multiple-choice questions → submit → see score & answers. Works entirely on your device.</div>
+
+      <div class="row">
+        <label>
+          <input id="file" class="file" type="file" accept=".docx,.pdf,.pptx" />
+          <button class="btn">Choose file</button>
+        </label>
+        <div class="controls">
+          <span class="muted">Questions:</span>
+          <input id="count" class="input" type="number" min="1" max="50" value="10" style="width:80px" />
+          <button id="reset" class="btn" type="button">Reset</button>
+        </div>
+        <span id="loaded" class="badge" style="display:none;"></span>
+      </div>
+
+      <div id="drop" class="drop">…or drag & drop a file here</div>
+      <div id="status" class="status">Ready.</div>
+
+      <div class="hint">Tip: On GitHub Pages, make sure your site is served over <b>HTTPS</b> (default <code>https://username.github.io/repo</code>) so the file picker works on mobile.</div>
+
+      <h3 style="margin:16px 0 10px">Quiz</h3>
+      <div id="quiz" class="grid"></div>
+
+      <div class="footer" style="margin-top:12px;">
+        <button id="submit" class="btn" type="button">Submit</button>
+        <div id="score" class="muted"></div>
+      </div>
+
+      <h3 style="margin:16px 0 10px">Source Text</h3>
+      <div id="src" class="src">No text yet. Upload a file above.</div>
+    </div>
+  </div>
 
   <script>
-    const fileInput = document.getElementById('fileInput');
-    const quizDiv = document.getElementById('quiz');
-    const resultDiv = document.getElementById('result');
+    // --- PDF.js worker path
+    try { pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.js"; } catch(e){}
 
-    let questions = [];
-    let score = 0;
+    // ----- Utilities -----
+    const clean = (s) => (s || "").replace(/\r/g," ").replace(/\n+/g," ").replace(/\s{2,}/g," ").trim();
+    const sentences = (text) =>
+      text.split(/(?<=[.!?])\s+(?=[A-Z0-9\(\"'])/).map(s=>s.trim()).filter(s => s.length > 25 && /\w/.test(s)).slice(0, 800);
+    const shuffle = (a) => { const x=[...a]; for(let i=x.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [x[i],x[j]]=[x[j],x[i]]; } return x; };
+    const uniq = (arr) => [...new Set(arr)];
+    const escReg = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-    fileInput.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target.result;
-        generateQuestions(text);
-        showQuiz();
-      };
-      reader.readAsText(file);
+    const STOP = new Set(("the,be,to,of,and,a,in,that,have,i,it,for,not,on,with,he,as,you,do,at,by,from,or,an,are,is,was,were,this,which,can,also,into,than,then,them,they,there,their,its,has,had,have,been,being,over,under,between,within,without,may,might,should,could,would,will,shall"
+    ).split(","));
+    function pickKeywords(sentence) {
+      const tokens = sentence.match(/[A-Za-z][A-Za-z\-']{3,}|\d{2,}/g) || [];
+      return tokens.filter(t => !STOP.has(t.toLowerCase()))
+                   .map(t => ({t, score: t.length + (/^[A-Z]/.test(t) ? 3 : 0)}))
+                   .sort((a,b)=>b.score-a.score)
+                   .map(x=>x.t);
+    }
+
+    // ----- Build MCQs from text -----
+    function buildQuestionsFromText(text, targetCount = 10) {
+      const sents = sentences(text);
+      const keywordPool = uniq(
+        sents.flatMap(s => pickKeywords(s).slice(0,5)).map(w => w.trim())
+      ).filter(w => w.length > 3);
+
+      const qs = [];
+      for (const s of sents) {
+        if (qs.length >= targetCount) break;
+        const keys = pickKeywords(s);
+        if (!keys.length) continue;
+        const answer = keys[0];
+        const prompt = s.replace(new RegExp("\\b" + escReg(answer) + "\\b"), "_____");
+        const distractors = shuffle(keywordPool.filter(w => w.toLowerCase() !== answer.toLowerCase())).slice(0,3);
+        if (distractors.length < 3) continue;
+        const options = shuffle([answer, ...distractors]);
+        qs.push({ type:"mcq", prompt, original:s, answer, options });
+      }
+      // fallback to simple T/F if too few MCQs
+      while (qs.length < targetCount && sents.length) {
+        const s = sents[Math.floor(Math.random()*sents.length)];
+        const k = pickKeywords(s);
+        if (!k.length) continue;
+        const ans = Math.random() > 0.5;
+        const prompt = ans ? s : s.replace(k[0], k[0] + (k[0].endsWith("s") ? "es" : "s"));
+        qs.push({ type:"tf", prompt, answer: ans });
+      }
+      return qs.slice(0, targetCount);
+    }
+
+    // ----- File extractors -----
+    async function extractFromDOCX(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const res = await window.mammoth.extractRawText({ arrayBuffer });
+      return clean(res.value || "");
+    }
+
+    async function extractFromPDF(file) {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let full = "";
+      for (let p=1; p<=pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const c = await page.getTextContent();
+        full += " " + c.items.map(i => i.str || "").join(" ");
+      }
+      return clean(full);
+    }
+
+    async function extractFromPPTX(file) {
+      const buf = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(buf);
+      const slideFiles = Object.keys(zip.files)
+        .filter(p => p.startsWith("ppt/slides/slide") && p.endsWith(".xml"))
+        .sort((a,b) => {
+          const na = parseInt(a.match(/slide(\d+)/)?.[1]||"0",10);
+          const nb = parseInt(b.match(/slide(\d+)/)?.[1]||"0",10);
+          return na - nb;
+        });
+      let full = "";
+      for (const path of slideFiles) {
+        const xml = await zip.files[path].async("text");
+        const texts = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(m => m[1]);
+        full += " " + texts.join(" ");
+      }
+      return clean(full);
+    }
+
+    async function extractText(file) {
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      if (ext === "docx") return extractFromDOCX(file);
+      if (ext === "pdf")  return extractFromPDF(file);
+      if (ext === "pptx") return extractFromPPTX(file);
+      throw new Error("Unsupported file type. Please upload DOCX, PDF, or PPTX.");
+    }
+
+    // ----- UI logic -----
+    const el = (id) => document.getElementById(id);
+    const fileInput = el("file");
+    const drop = el("drop");
+    const status = el("status");
+    const srcDiv = el("src");
+    const quizDiv = el("quiz");
+    const submitBtn = el("submit");
+    const scoreDiv = el("score");
+    const countInput = el("count");
+    const loadedBadge = el("loaded");
+    const resetBtn = el("reset");
+
+    let QUESTIONS = [];
+    let ANSWERS = {};
+    let SUBMITTED = false;
+
+    function setStatus(msg, cls) { status.textContent = msg; status.className = "status " + (cls || ""); }
+
+    function renderQuiz() {
+      quizDiv.innerHTML = "";
+      QUESTIONS.forEach((q, idx) => {
+        const wrap = document.createElement("div");
+        wrap.className = "q";
+        const head = document.createElement("p");
+        head.className = "prompt";
+        head.textContent = `Q${idx+1}. ${q.prompt}`;
+        wrap.appendChild(head);
+
+        if (q.type === "mcq") {
+          q.options.forEach((opt) => {
+            const b = document.createElement("button");
+            b.className = "opt" + (ANSWERS[idx] === opt ? " selected" : "");
+            b.textContent = opt;
+            b.onclick = () => {
+              if (SUBMITTED) return;
+              ANSWERS[idx] = opt;
+              renderQuiz(); // refresh selection styles
+            };
+            if (SUBMITTED) {
+              if (opt === q.answer) b.classList.add("correct");
+              if (ANSWERS[idx] === opt && opt !== q.answer) b.classList.add("incorrect");
+            }
+            wrap.appendChild(b);
+          });
+
+          if (SUBMITTED) {
+            const exp = document.createElement("div");
+            exp.className = "hint";
+                        exp.textContent = `Answer: ${q.answer}`;
+            wrap.appendChild(exp);
+          }
+        } else if (q.type === "tf") {
+          ["True","False"].forEach(opt => {
+            const b = document.createElement("button");
+            b.className = "opt" + (ANSWERS[idx] === opt ? " selected" : "");
+            b.textContent = opt;
+            b.onclick = () => {
+              if (SUBMITTED) return;
+              ANSWERS[idx] = opt;
+              renderQuiz();
+            };
+            if (SUBMITTED) {
+              if ((opt === "True") === q.answer) b.classList.add("correct");
+              if (ANSWERS[idx] === opt && ((opt === "True") !== q.answer)) b.classList.add("incorrect");
+            }
+            wrap.appendChild(b);
+          });
+
+          if (SUBMITTED) {
+            const exp = document.createElement("div");
+            exp.className = "hint";
+            exp.textContent = `Answer: ${q.answer}`;
+            wrap.appendChild(exp);
+          }
+        }
+
+        quizDiv.appendChild(wrap);
+      });
+    }
+
+    function handleSubmit() {
+      if (SUBMITTED) return;
+      SUBMITTED = true;
+      let correct = 0;
+      QUESTIONS.forEach((q, i) => {
+        if (q.type === "mcq" && ANSWERS[i] === q.answer) correct++;
+        if (q.type === "tf" && ((ANSWERS[i] === "True") === q.answer)) correct++;
+      });
+      scoreDiv.textContent = `Score: ${correct} / ${QUESTIONS.length}`;
+      renderQuiz();
+    }
+
+    function handleReset() {
+      QUESTIONS = [];
+      ANSWERS = {};
+      SUBMITTED = false;
+      quizDiv.innerHTML = "";
+      srcDiv.textContent = "No text yet. Upload a file above.";
+      scoreDiv.textContent = "";
+      setStatus("Ready.");
+      loadedBadge.style.display = "none";
+    }
+
+    async function handleFile(file) {
+      try {
+        setStatus(`Reading ${file.name}...`);
+        const text = await extractText(file);
+        srcDiv.textContent = text.slice(0, 2000) + (text.length > 2000 ? "…" : "");
+        const num = Math.min(parseInt(countInput.value || "10"), 50);
+        QUESTIONS = buildQuestionsFromText(text, num);
+        ANSWERS = {};
+        SUBMITTED = false;
+        renderQuiz();
+        setStatus(`Loaded ${file.name} (${text.length} chars).`, "ok");
+        loadedBadge.textContent = file.name;
+        loadedBadge.style.display = "inline-block";
+      } catch (err) {
+        console.error(err);
+        setStatus("Error: " + err.message, "err");
+      }
+    }
+
+    // ----- Events -----
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files.length) handleFile(e.target.files[0]);
     });
 
-    function generateQuestions(text) {
-      const lines = text.split('\n').filter(line => line.trim() !== '');
-      questions = lines.map((line, index) => {
-        return {
-          question: `What did you study about line ${index+1}?`,
-          answer: line.trim()
-        };
-      });
-    }
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.style.borderColor="#666"; });
+    drop.addEventListener("dragleave", (e) => { e.preventDefault(); drop.style.borderColor="#2a2a2a"; });
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.style.borderColor="#2a2a2a";
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
 
-    function showQuiz() {
-      quizDiv.innerHTML = '';
-      resultDiv.innerHTML = '';
-      score = 0;
-      questions.forEach((q, i) => {
-        const div = document.createElement('div');
-        div.classList.add('question');
-        div.innerHTML = `
-          <p>${q.question}</p>
-          <input type="text" id="ans-${i}" placeholder="Type your answer">
-        `;
-        quizDiv.appendChild(div);
-      });
-      const btn = document.createElement('button');
-      btn.innerText = 'Submit Quiz';
-      btn.onclick = checkAnswers;
-      quizDiv.appendChild(btn);
-    }
+    submitBtn.addEventListener("click", handleSubmit);
+    resetBtn.addEventListener("click", handleReset);
 
-    function checkAnswers() {
-      score = 0;
-      questions.forEach((q, i) => {
-        const ans = document.getElementById(`ans-${i}`).value.trim().toLowerCase();
-        if (ans === q.answer.toLowerCase()) score++;
-      });
-      resultDiv.innerHTML = `<h2>You scored ${score} / ${questions.length}</h2>`;
-    }
+    setStatus("Ready. Upload a DOCX, PDF, or PPTX file.");
   </script>
 </body>
 </html>
+
+           
