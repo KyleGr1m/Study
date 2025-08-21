@@ -2,54 +2,79 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Study Helper</title>
-  <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#111111" />
-  <link rel="icon" href="icons/icon-192.png" />
   <style>
-    html,body{margin:0;height:100%;background:#0b0b0b;color:#e5e5e5;font-family:system-ui,Segoe UI,Roboto,Inter,Arial,sans-serif}
-    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
-    .card{width:100%;max-width:720px;background:rgba(255,255,255,0.02);border:1px solid #222;border-radius:20px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
-    h1{margin:0 0 8px;font-size:28px}
-    .muted{color:#9ca3af;font-size:14px;margin-bottom:16px}
-    button{background:#111;border:1px solid #333;padding:10px 14px;border-radius:12px;color:#e5e5e5}
-    input[type=file]{display:none}
-    .drop{border:2px dashed #2a2a2a;border-radius:16px;padding:24px;text-align:center;margin:12px 0}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;color:#9ca3af;font-size:12px}
-    .ok{color:#10b981}
-    .err{color:#ef4444}
-    .src{max-height:200px;overflow:auto;background:#0f0f0f;border:1px solid #222;border-radius:12px;padding:12px;margin-top:12px;white-space:pre-wrap}
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f4f4f9; }
+    #quiz, #result { margin-top: 20px; }
+    .question { margin-bottom: 15px; padding: 10px; background: #fff; border-radius: 10px; }
+    button { padding: 10px 20px; margin-top: 10px; border: none; background: #4CAF50; color: white; border-radius: 8px; }
+    button:hover { background: #45a049; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Study Helper (PWA)</h1>
-      <div class="muted">Upload your reviewer (PDF/DOCX/PPTX) → auto‑quiz → score. Install via “Add to Home Screen”.</div>
-      <div class="drop" id="drop">Drag & drop or choose a file</div>
-      <label><input id="file" type="file" accept=".pdf,.docx,.pptx"><button>Choose file</button></label>
-      <div id="status" class="mono"></div>
-      <div id="output" class="src"></div>
-    </div>
-  </div>
+  <h1>📚 Study Helper</h1>
+  <p>Upload your reviewer (TXT only for now):</p>
+  <input type="file" id="fileInput" accept=".txt">
+  <div id="quiz"></div>
+  <div id="result"></div>
+
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+    const fileInput = document.getElementById('fileInput');
+    const quizDiv = document.getElementById('quiz');
+    const resultDiv = document.getElementById('result');
+
+    let questions = [];
+    let score = 0;
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target.result;
+        generateQuestions(text);
+        showQuiz();
+      };
+      reader.readAsText(file);
+    });
+
+    function generateQuestions(text) {
+      const lines = text.split('\n').filter(line => line.trim() !== '');
+      questions = lines.map((line, index) => {
+        return {
+          question: `What did you study about line ${index+1}?`,
+          answer: line.trim()
+        };
       });
     }
-    const file = document.getElementById('file');
-    const drop = document.getElementById('drop');
-    const status = document.getElementById('status');
-    const output = document.getElementById('output');
-    function setStatus(msg, cls){ status.textContent = msg; status.className = 'mono ' + (cls||''); }
-    drop.addEventListener('dragover', e => { e.preventDefault(); });
-    drop.addEventListener('drop', e => { e.preventDefault(); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-    file.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
-    async function handleFile(f){
-      setStatus('Loaded: ' + f.name + ' (demo shell only)', 'ok');
-      output.textContent = 'This is a lightweight PWA shell. Replace this with the full React app code you have in ChatGPT canvas.\n\nFor now, this proves PWA + caching + installation works.';
+
+    function showQuiz() {
+      quizDiv.innerHTML = '';
+      resultDiv.innerHTML = '';
+      score = 0;
+      questions.forEach((q, i) => {
+        const div = document.createElement('div');
+        div.classList.add('question');
+        div.innerHTML = `
+          <p>${q.question}</p>
+          <input type="text" id="ans-${i}" placeholder="Type your answer">
+        `;
+        quizDiv.appendChild(div);
+      });
+      const btn = document.createElement('button');
+      btn.innerText = 'Submit Quiz';
+      btn.onclick = checkAnswers;
+      quizDiv.appendChild(btn);
+    }
+
+    function checkAnswers() {
+      score = 0;
+      questions.forEach((q, i) => {
+        const ans = document.getElementById(`ans-${i}`).value.trim().toLowerCase();
+        if (ans === q.answer.toLowerCase()) score++;
+      });
+      resultDiv.innerHTML = `<h2>You scored ${score} / ${questions.length}</h2>`;
     }
   </script>
 </body>
